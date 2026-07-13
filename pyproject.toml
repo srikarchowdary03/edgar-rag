@@ -1,0 +1,21 @@
+[project]
+name = "edgar-rag"
+version = "0.1.0"
+description = "RAG pipeline over SEC EDGAR filings"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=2.45.0",
+    "chromadb>=1.5.9",
+    "python-dotenv>=1.2.2",
+    "requests>=2.34.2",
+    "tiktoken>=0.13.0",
+    "pydantic>=2.13.4",
+    "beautifulsoup4>=4.15.0",
+    "lxml>=6.1.1",
+    "tenacity>=9.1.4",
+    "tqdm>=4.68.4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

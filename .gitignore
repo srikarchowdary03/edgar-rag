@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# vector store
+chroma/
+chromadb/
+.chroma/
+*.sqlite3
+
+# cached EDGAR filings / data
+data/
+cache/
+filings/
+*.parquet
+*.jsonl
+*.csv
