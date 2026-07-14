@@ -13,6 +13,7 @@ from there, and src/ must be importable):
   PYTHONPATH=src python src/eval_track1.py
 """
 
+import argparse
 import json
 from pathlib import Path
 
@@ -81,12 +82,22 @@ def faithfulness(ans, chunks):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--retriever", choices=["dense", "hybrid"], default="dense")
+    parser.add_argument("--out", default=None)
+    args = parser.parse_args()
+
+    if args.retriever == "hybrid":
+        from hybrid import retrieve as retrieve_fn
+    else:
+        retrieve_fn = None
+
     gold = [json.loads(line) for line in Path(GOLD_PATH).open(encoding="utf-8")]
     print(f"Evaluating {len(gold)} gold questions (retrieval over full corpus)...\n")
 
     rows = []
     for g in gold:
-        r = answer(g["question"], k=K, where=None)      # NO ticker filter
+        r = answer(g["question"], k=K, where=None, retrieve_fn=retrieve_fn)   # NO ticker filter
         chunks = r["chunks"]
         rank = first_hit_rank(chunks, g)
         refused = REFUSAL_MARK in r["answer"].lower()
@@ -119,7 +130,12 @@ def main():
     print("=" * 48)
 
     Path("data/eval").mkdir(parents=True, exist_ok=True)
-    out = "data/eval/track1_results_baseline.json"
+    if args.out:
+        out = args.out
+    elif args.retriever == "hybrid":
+        out = "data/eval/track1_results_hybrid.json"
+    else:
+        out = "data/eval/track1_results_baseline.json"
     Path(out).write_text(json.dumps(rows, indent=2), encoding="utf-8")
     print(f"\nPer-question results -> {out}")
 

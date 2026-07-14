@@ -71,8 +71,8 @@ def build_context(chunks):
     return "\n\n".join(blocks)
 
 
-def answer(query, k=TOP_K, where=None):
-    chunks = retrieve(query, k=k, where=where)
+def answer(query, k=TOP_K, where=None, retrieve_fn=None):
+    chunks = (retrieve_fn or retrieve)(query, k=k, where=where)
     context = build_context(chunks)
     user_msg = (
         f"Question: {query}\n\n"
