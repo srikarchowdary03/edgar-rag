@@ -83,12 +83,14 @@ def faithfulness(ans, chunks):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--retriever", choices=["dense", "hybrid"], default="dense")
+    parser.add_argument("--retriever", choices=["dense", "hybrid", "dense_rerank"], default="dense")
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
 
     if args.retriever == "hybrid":
         from hybrid import retrieve as retrieve_fn
+    elif args.retriever == "dense_rerank":
+        from hybrid import retrieve_dense_rerank as retrieve_fn
     else:
         retrieve_fn = None
 
@@ -134,6 +136,8 @@ def main():
         out = args.out
     elif args.retriever == "hybrid":
         out = "data/eval/track1_results_hybrid.json"
+    elif args.retriever == "dense_rerank":
+        out = "data/eval/track1_results_dense_rerank.json"
     else:
         out = "data/eval/track1_results_baseline.json"
     Path(out).write_text(json.dumps(rows, indent=2), encoding="utf-8")

@@ -98,6 +98,23 @@ def retrieve(query, k=6, where=None):
         })
     return out
 
+def retrieve_dense_rerank(query, k=6, where=None):
+    """Dense retrieve -> cross-encoder rerank (no BM25). The chosen production path."""
+    cand = _dense(query, RERANK_POOL, where=where)          # dense candidates only
+    scores = _reranker.predict([(query, _by_id[cid]["text"]) for cid in cand])
+    reranked = sorted(zip(cand, scores), key=lambda x: x[1], reverse=True)
+    out = []
+    for cid, score in reranked[:k]:
+        c = _by_id[cid]
+        out.append({
+            "id": cid, "text": c["text"],
+            "meta": {"ticker": c["ticker"], "company": c["company"],
+                     "fiscal_year": c["fiscal_year"], "section": c["section"],
+                     "chunk_index": c["chunk_index"], "n_tokens": c["n_tokens"]},
+            "dist": float(score),
+        })
+    return out
+
 
 if __name__ == "__main__":
     for q in ["What technology or competitive risks does Adobe highlight in its risk factors?",

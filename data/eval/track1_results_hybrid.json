@@ -1,0 +1,156 @@
+[
+  {
+    "id": "n01",
+    "ticker": "BA",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n02",
+    "ticker": "BA",
+    "first_hit_rank": 3,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n03",
+    "ticker": "BA",
+    "first_hit_rank": 2,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n04",
+    "ticker": "MSFT",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n05",
+    "ticker": "MSFT",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n06",
+    "ticker": "MSFT",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n07",
+    "ticker": "JPM",
+    "first_hit_rank": 1,
+    "refused": true,
+    "faithfulness": null
+  },
+  {
+    "id": "n08",
+    "ticker": "JPM",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n09",
+    "ticker": "JPM",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n10",
+    "ticker": "AWK",
+    "first_hit_rank": 4,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n11",
+    "ticker": "AWK",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 0.95
+  },
+  {
+    "id": "n12",
+    "ticker": "AWK",
+    "first_hit_rank": null,
+    "refused": false,
+    "faithfulness": 0.9285714285714286
+  },
+  {
+    "id": "n13",
+    "ticker": "PFE",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n14",
+    "ticker": "PFE",
+    "first_hit_rank": 2,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n15",
+    "ticker": "ADBE",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "n16",
+    "ticker": "ADBE",
+    "first_hit_rank": 2,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "c01",
+    "ticker": "ADBE",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "c02",
+    "ticker": "ADBE",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "c03",
+    "ticker": "PFE",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "c04",
+    "ticker": "PFE",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "c05",
+    "ticker": "MSFT",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
+    "id": "c06",
+    "ticker": "AWK",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 0.9444444444444444
+  }
+]

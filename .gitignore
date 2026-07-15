@@ -14,10 +14,17 @@ chromadb/
 .chroma/
 *.sqlite3
 
-# cached EDGAR filings / data
-data/
+# data: ignore everything under data/ (raw filings, Chroma index) ...
+data/*
+# ... but DO track the eval inputs + results (gold set, per-config metrics)
+!data/eval/
+data/eval/*.tmp
 cache/
 filings/
 *.parquet
 *.jsonl
 *.csv
+# re-include eval JSON/JSONL that the global *.jsonl/*.csv rules above would ignore
+!data/eval/*.jsonl
+!data/eval/*.json
+!data/eval/*.csv
