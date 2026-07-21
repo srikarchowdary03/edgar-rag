@@ -57,19 +57,48 @@ function; switching Anthropic/OpenAI is a one-env-var change. Real production pa
 ### Track 1 — retrieval + faithfulness (baseline vs final)
 
 Measured on 22 narrative gold questions; retrieval over the full corpus (no ticker
-filter). Baseline = dense-only. Final = dense + reranker (BM25 dropped, see ablation).
-Both faithfulness/refusal figures below are from runs on the final gold set (n07 reworded
-to a corpus-answerable question).
+filter). Baseline = dense-only. Final = dense + reranker with a tuned candidate pool
+of 10 (see latency tuning below), measured through the **production pipeline**
+(`RAGPipeline`), so reported numbers reflect exactly what the service returns.
 
-| Config              | hit@1 | hit@3 | hit@5 |  MRR  | faithfulness | refusal |
-|---------------------|:-----:|:-----:|:-----:|:-----:|:------------:|:-------:|
-| dense (baseline)    | 0.636 | 0.909 | 0.955 | 0.782 | —            | —       |
-| dense + reranker    | 0.727 | 0.909 | 0.955 | 0.830 | 0.998 (n=22) | 0.000   |
+| Config                       | hit@1 | hit@3 | hit@5 |  MRR  | faithfulness | refusal |
+|------------------------------|:-----:|:-----:|:-----:|:-----:|:------------:|:-------:|
+| dense (baseline)             | 0.636 | 0.909 | 0.955 | 0.782 | —            | —       |
+| dense + reranker (pool=40)   | 0.727 | 0.909 | 0.955 | 0.830 | 0.998 (n=22) | 0.000   |
+| dense + reranker (pool=10)   | 0.818 | 0.909 | 0.955 | 0.867 | 0.989 (n=22) | 0.000   |
 
-The reranker lifted top-1 precision (hit@1 +0.09, MRR +0.05) while recall (hit@3/hit@5)
-held at ceiling. On the final config every question was answered (refusal 0/22) and
-faithfulness reached 0.998 — the reranker reliably surfaces chunks that support grounded,
-cited answers.
+**Final config = dense + reranker, pool=10.** Reranking lifted top-1 precision over the
+dense baseline (hit@1 0.636 -> 0.818, MRR 0.782 -> 0.867) with recall at ceiling and
+zero refusals. Caveat: with only 22 questions, a 0.09 hit@1 move is ~2 questions
+flipping — the direction is reliable, the exact magnitude is noisy.
+
+### Latency / cost tuning — reranker candidate pool
+
+The reranker is the latency bottleneck. A pool-size sweep (retrieval-only, no API)
+measured quality vs. rerank latency across candidate-pool sizes:
+
+| pool | hit@1 |  MRR  | rerank_ms | speedup |
+|:----:|:-----:|:-----:|:---------:|:-------:|
+|   5  | 0.773 | 0.833 |    1,554  | 22.2x   |
+|  10  | 0.818 | 0.867 |    2,529  | 13.6x   |
+|  15  | 0.773 | 0.852 |    3,853  |  9.0x   |
+|  20  | 0.773 | 0.841 |    5,131  |  6.7x   |
+|  30  | 0.727 | 0.830 |   15,906  |  2.2x   |
+|  40  | 0.727 | 0.830 |   34,519  |  1.0x   |
+
+**Finding — smaller pool is both faster and more accurate.** pool=10 gives a 13.6x
+rerank speedup *and* higher accuracy than pool=40. Excess candidates give the
+cross-encoder more chances to mis-rank; dense retrieval already puts the right chunk
+in the top-5 (hit@5 0.955), so candidates beyond ~10 are mostly noise. Reduced end-to-end
+query latency roughly 44s -> ~10s (rerank 25s -> ~2.5s; generation now dominates).
+
+### Per-query instrumentation
+
+`RAGPipeline.answer()` emits per-stage latency, real token counts (from the API
+`usage` field), and estimated cost. Representative single query (pool=40, pre-tuning):
+retrieval ~35s of which rerank ~25s, generation ~9s, ~7,300 input / ~750 output tokens.
+Cost is input-dominated (6 chunks x ~800 tokens of context), so TOP_K and chunk size
+are the cost levers.
 
 ### Retrieval ablation — what each component contributes
 
@@ -90,8 +119,12 @@ Retrieval-only (no generation), 22 gold questions, candidate pool = 40.
 3. **Fusion alone slightly hurt recall:** adding BM25 without a reranker pushed some good
    dense hits down (hit@3 0.909 → 0.818). The reranker afterward recovered it to ceiling.
 4. **Decision — drop BM25.** `dense_rerank` equals or beats `hybrid_rerank` on every metric
-   (MRR 0.830 vs 0.828) while being simpler and faster (no BM25 index). Once a reranker is
-   present, BM25 doesn't earn its place *on this corpus.*
+   while being simpler and faster (no BM25 index). Once a reranker is present, BM25 doesn't
+   earn its place *on this corpus.*
+
+*Note: the ablation table above was measured at candidate pool=40 (its historical setting).
+The production pool was later tuned to 10; the ablation is kept as the record that justified
+dropping BM25, not as current production numbers.*
 
 **Caveat:** this gold set skews toward conceptual/paraphrased questions (dense's strength).
 On a more exact-match / keyword-heavy question set, BM25 could pull its weight; the honest
@@ -115,6 +148,8 @@ claim is "dense+rerank wins *here*," not universally.
 
 - Chunk size 800 tokens, overlap 120, section-aware.
 - Embedder: `BAAI/bge-m3` (normalized, cosine).
-- Retriever: dense top-40 → `BAAI/bge-reranker-v2-m3` → top-k (BM25 dropped after ablation).
+- Retriever: dense top-10 → `BAAI/bge-reranker-v2-m3` → top-k (pool tuned 40->10; BM25 dropped after ablation).
 - Generator: `claude-sonnet-5` (grounded, cited, refuses on insufficient context).
-- Reproducibility: any config runs via `--retriever {dense,hybrid,dense_rerank}`.
+- Reproducibility: any config runs via `--retriever {dense,hybrid,dense_rerank,pipeline}`.
+- Eval and serving share one retrieval path: `--retriever pipeline` measures the exact
+  `RAGPipeline` the API serves, so published numbers == deployed behavior.

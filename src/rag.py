@@ -19,29 +19,14 @@ import anthropic
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-MODEL_NAME = "BAAI/bge-m3"          # MUST match the model used in Phase 3
-CHROMA_PATH = "data/chroma"
-COLLECTION = "filings"
-LLM_MODEL = "claude-sonnet-5"       # good quality/cost balance for RAG generation
-TOP_K = 6
-
-SECTION_LABELS = {
-    "item1_business": "Item 1 Business",
-    "item1a_risk_factors": "Item 1A Risk Factors",
-    "item7_mdna": "Item 7 MD&A",
-}
-
-SYSTEM_PROMPT = (
-    "You are a financial-filings analyst. Answer the user's question using ONLY the "
-    "numbered context passages provided. Cite the passages you use with their bracket "
-    "numbers, e.g. [1], [2]. If the context does not contain enough information to "
-    "answer, say exactly: \"I don't have enough information in the retrieved filings "
-    "to answer that.\" Do not use outside knowledge. Be concise and precise with figures."
+from config import (
+    EMBED_MODEL, CHROMA_PATH, COLLECTION, LLM_MODEL, TOP_K,
+    SECTION_LABELS, SYSTEM_PROMPT,
 )
 
 # --- connect to the existing index (load model for QUERY embedding only) ---
 print("Loading embedding model + index...")
-embedder = SentenceTransformer(MODEL_NAME)
+embedder = SentenceTransformer(EMBED_MODEL)
 collection = chromadb.PersistentClient(path=CHROMA_PATH).get_collection(COLLECTION)
 client = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY from the environment
 

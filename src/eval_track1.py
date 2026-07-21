@@ -17,10 +17,11 @@ import argparse
 import json
 from pathlib import Path
 
-from rag import answer, client, LLM_MODEL   # reuse the exact pipeline under test
+from rag import answer, client   # reuse the exact pipeline under test
 
-GOLD_PATH = "data/eval/eval_gold_narrative.jsonl"
-K = 6                       # retrieve depth (rag.answer uses TOP_K=6)
+from config import GOLD_PATH, EVAL_DIR, LLM_MODEL, TOP_K, JUDGE_MAX_TOKENS
+
+K = TOP_K                   # retrieve depth (matches the pipeline's TOP_K)
 KS = [1, 3, 5]              # report hit@k at these depths
 REFUSAL_MARK = "don't have enough information"
 
@@ -63,7 +64,7 @@ def faithfulness(ans, chunks):
         return None
     context = "\n\n".join(f"[{i}] {c['text']}" for i, c in enumerate(chunks, 1))
     resp = client.messages.create(
-        model=LLM_MODEL, max_tokens=4096,   # was 1024 -- claim lists overflow
+        model=LLM_MODEL, max_tokens=JUDGE_MAX_TOKENS,   # claim lists can be long
         system=FAITH_SYSTEM,
         messages=[{"role": "user", "content": f"CONTEXT:\n{context}\n\nANSWER:\n{ans}"}],
     )
@@ -83,7 +84,7 @@ def faithfulness(ans, chunks):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--retriever", choices=["dense", "hybrid", "dense_rerank"], default="dense")
+    parser.add_argument("--retriever", choices=["dense", "hybrid", "dense_rerank", "pipeline"], default="dense")
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
 
@@ -91,6 +92,10 @@ def main():
         from hybrid import retrieve as retrieve_fn
     elif args.retriever == "dense_rerank":
         from hybrid import retrieve_dense_rerank as retrieve_fn
+    elif args.retriever == "pipeline":
+        from pipeline import RAGPipeline
+        _rp = RAGPipeline()
+        retrieve_fn = _rp.retrieve
     else:
         retrieve_fn = None
 
@@ -131,15 +136,17 @@ def main():
     print(f"{'refusal rate':<24}{refusal_rate:>10.3f}")
     print("=" * 48)
 
-    Path("data/eval").mkdir(parents=True, exist_ok=True)
+    EVAL_DIR.mkdir(parents=True, exist_ok=True)
     if args.out:
-        out = args.out
+        out = Path(args.out)
     elif args.retriever == "hybrid":
-        out = "data/eval/track1_results_hybrid.json"
+        out = EVAL_DIR / "track1_results_hybrid.json"
     elif args.retriever == "dense_rerank":
-        out = "data/eval/track1_results_dense_rerank.json"
+        out = EVAL_DIR / "track1_results_dense_rerank.json"
+    elif args.retriever == "pipeline":
+        out = EVAL_DIR / "track1_results_pipeline.json"
     else:
-        out = "data/eval/track1_results_baseline.json"
+        out = EVAL_DIR / "track1_results_baseline.json"
     Path(out).write_text(json.dumps(rows, indent=2), encoding="utf-8")
     print(f"\nPer-question results -> {out}")
 

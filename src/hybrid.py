@@ -21,8 +21,9 @@ from sentence_transformers import CrossEncoder
 
 from rag import embedder, collection   # reuse the already-loaded BGE-M3 + Chroma
 
-CHUNKS_PATH = "data/chunks.jsonl"
-RERANKER_NAME = "BAAI/bge-reranker-v2-m3"
+from config import CHUNKS_PATH, RERANK_MODEL, DENSE_CANDIDATES
+
+# BM25 / hybrid-specific knobs stay local -- these are experiment-only.
 DENSE_M = 40        # candidates pulled from dense search
 SPARSE_M = 40       # candidates pulled from BM25
 RRF_K = 60          # RRF constant (standard default)
@@ -39,7 +40,7 @@ def _tok(text):
 
 
 _bm25 = BM25Okapi([_tok(c["text"]) for c in _chunks])
-_reranker = CrossEncoder(RERANKER_NAME, max_length=512)
+_reranker = CrossEncoder(RERANK_MODEL, max_length=512)
 
 
 def _match_where(chunk, where):
@@ -100,7 +101,7 @@ def retrieve(query, k=6, where=None):
 
 def retrieve_dense_rerank(query, k=6, where=None):
     """Dense retrieve -> cross-encoder rerank (no BM25). The chosen production path."""
-    cand = _dense(query, RERANK_POOL, where=where)          # dense candidates only
+    cand = _dense(query, DENSE_CANDIDATES, where=where)     # dense candidates only
     scores = _reranker.predict([(query, _by_id[cid]["text"]) for cid in cand])
     reranked = sorted(zip(cand, scores), key=lambda x: x[1], reverse=True)
     out = []

@@ -9,14 +9,14 @@
   {
     "id": "n02",
     "ticker": "BA",
-    "first_hit_rank": 3,
+    "first_hit_rank": 1,
     "refused": false,
     "faithfulness": 1.0
   },
   {
     "id": "n03",
     "ticker": "BA",
-    "first_hit_rank": 2,
+    "first_hit_rank": 1,
     "refused": false,
     "faithfulness": 1.0
   },
@@ -79,7 +79,7 @@
   {
     "id": "n12",
     "ticker": "AWK",
-    "first_hit_rank": 6,
+    "first_hit_rank": 3,
     "refused": false,
     "faithfulness": 1.0
   },
@@ -102,12 +102,12 @@
     "ticker": "ADBE",
     "first_hit_rank": 1,
     "refused": false,
-    "faithfulness": 0.9473684210526315
+    "faithfulness": 1.0
   },
   {
     "id": "n16",
     "ticker": "ADBE",
-    "first_hit_rank": 2,
+    "first_hit_rank": null,
     "refused": false,
     "faithfulness": 1.0
   },
@@ -123,14 +123,14 @@
     "ticker": "ADBE",
     "first_hit_rank": 1,
     "refused": false,
-    "faithfulness": 1.0
+    "faithfulness": 0.8666666666666667
   },
   {
     "id": "c03",
     "ticker": "PFE",
     "first_hit_rank": 1,
     "refused": false,
-    "faithfulness": 1.0
+    "faithfulness": 0.8888888888888888
   },
   {
     "id": "c04",

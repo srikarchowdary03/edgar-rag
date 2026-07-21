@@ -11,20 +11,16 @@ Requires: pip install langchain-text-splitters tiktoken
 """
 
 import json
-from pathlib import Path
 
 import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# --- Config ---
-CHUNK_SIZE = 800       # tokens per chunk
-CHUNK_OVERLAP = 120    # tokens (~15%)
-ENCODING = "cl100k_base"
+from config import (
+    ROOT, CHUNKS_PATH, MANIFEST_PATH, CHUNK_SIZE, CHUNK_OVERLAP,
+    TIKTOKEN_ENCODING, SKIP_SECTIONS,
+)
 
-# Sections to EXCLUDE from the retrieval index for v1.
-SKIP_SECTIONS = {"item8_financials"}
-
-enc = tiktoken.get_encoding(ENCODING)
+enc = tiktoken.get_encoding(TIKTOKEN_ENCODING)
 
 
 def n_tokens(text: str) -> int:
@@ -32,19 +28,19 @@ def n_tokens(text: str) -> int:
 
 
 splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    encoding_name=ENCODING,
+    encoding_name=TIKTOKEN_ENCODING,
     chunk_size=CHUNK_SIZE,
     chunk_overlap=CHUNK_OVERLAP,
 )
 
-manifest = json.loads(Path("data/manifest.json").read_text(encoding="utf-8"))
+manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
 chunks = []
 for rec in manifest:
     ticker = rec["ticker"]
     year = rec["fiscal_year"]
     company = rec.get("company", ticker)
-    folder = Path(rec["path"])
+    folder = ROOT / rec["path"]                # manifest path is repo-root-relative
 
     for section in rec["sections"]:            # iterate the sections we saved...
         if section in SKIP_SECTIONS:           # ...but skip excluded ones
@@ -78,7 +74,7 @@ if not chunks:
     print("No chunks produced -- check data/manifest.json and your section files.")
     raise SystemExit
 
-out = Path("data/chunks.jsonl")
+out = CHUNKS_PATH
 with out.open("w", encoding="utf-8") as f:
     for c in chunks:
         f.write(json.dumps(c, ensure_ascii=False) + "\n")

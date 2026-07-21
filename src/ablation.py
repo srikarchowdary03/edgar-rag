@@ -17,7 +17,8 @@ from pathlib import Path
 from hybrid import (_dense, _sparse, _rrf, _reranker, _by_id,
                     DENSE_M, SPARSE_M, RERANK_POOL)
 
-GOLD_PATH = "data/eval/eval_gold_narrative.jsonl"
+from config import GOLD_PATH, EVAL_DIR
+
 TOPK = 10          # evaluation depth (enough for hit@5)
 KS = [1, 3, 5]
 
@@ -119,12 +120,13 @@ def main():
               + f"{mrr(name):>9.3f}")
     print("=" * 60)
 
-    Path("data/eval").mkdir(parents=True, exist_ok=True)
+    EVAL_DIR.mkdir(parents=True, exist_ok=True)
     summary = {name: {"hit@1": hit_at(name, 1), "hit@3": hit_at(name, 3),
                       "hit@5": hit_at(name, 5), "MRR": mrr(name)}
                for name in CONFIGS}
-    Path("data/eval/ablation.json").write_text(json.dumps(summary, indent=2))
-    print("\nSummary -> data/eval/ablation.json")
+    out = EVAL_DIR / "ablation.json"
+    out.write_text(json.dumps(summary, indent=2))
+    print(f"\nSummary -> {out}")
 
 
 if __name__ == "__main__":

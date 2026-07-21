@@ -14,18 +14,16 @@ Requires: pip install sentence-transformers chromadb
 """
 
 import json
-from pathlib import Path
 
 import chromadb
 from sentence_transformers import SentenceTransformer
 
-MODEL_NAME = "BAAI/bge-m3"
-CHROMA_PATH = "data/chroma"
-COLLECTION = "filings"
+from config import CHUNKS_PATH, CHROMA_PATH, COLLECTION, EMBED_MODEL
+
 BATCH = 32
 
 # --- 1. Load chunks ---
-chunks = [json.loads(line) for line in Path("data/chunks.jsonl").open(encoding="utf-8")]
+chunks = [json.loads(line) for line in CHUNKS_PATH.open(encoding="utf-8")]
 print(f"Loaded {len(chunks)} chunks")
 
 texts = [c["text"] for c in chunks]
@@ -41,8 +39,8 @@ metadatas = [{
 } for c in chunks]
 
 # --- 2. Embed (normalized -> cosine similarity) ---
-print(f"Loading model {MODEL_NAME} (first run downloads weights)...")
-model = SentenceTransformer(MODEL_NAME)
+print(f"Loading model {EMBED_MODEL} (first run downloads weights)...")
+model = SentenceTransformer(EMBED_MODEL)
 print("Embedding chunks...")
 embeddings = model.encode(
     texts, batch_size=BATCH, normalize_embeddings=True, show_progress_bar=True
