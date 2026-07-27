@@ -1,15 +1,12 @@
 """
-Phase 7: the production RAG core, instrumented + error-hardened.
+Phase 7/8: the production RAG core, migrated to Voyage AI API retrieval.
 
-Import-safe: nothing loads at import time -- construct RAGPipeline() explicitly.
+Retrieval now uses the Voyage API for BOTH embedding (query side) and reranking,
+so the server holds NO local ML models (no torch / sentence-transformers). This
+makes it deployable on tiny free hosts and cuts query latency from ~30s to ~6s.
 
-Reliability:
-  - The Anthropic client is configured with built-in retries (exponential backoff,
-    honours retry-after) for transient errors (429 / 5xx / connection). We only see
-    an exception here once those retries are exhausted.
-  - answer() never raises to the caller: retrieval or generation failures return a
-    structured {error: ...} result with a user-facing message, so the API can turn
-    it into a clean HTTP response instead of a 500 stack trace.
+Import-safe: nothing loads at import time; construct RAGPipeline() explicitly.
+answer() never raises -- failures return a typed {error: ...} result.
 """
 
 import logging
@@ -18,44 +15,41 @@ import time
 
 import anthropic
 import chromadb
-from sentence_transformers import CrossEncoder, SentenceTransformer
+import voyageai
 
-from config import (COLLECTION, CHROMA_PATH, DENSE_CANDIDATES, EMBED_MODEL,
-                    LLM_MODEL, MAX_TOKENS, REFUSAL, RERANK_MODEL,
-                    SECTION_LABELS, SYSTEM_PROMPT, TOP_K)
+from config import (COLLECTION, CHROMA_PATH, DENSE_CANDIDATES, LLM_MODEL,
+                    MAX_TOKENS, REFUSAL, SECTION_LABELS, SYSTEM_PROMPT, TOP_K,
+                    VOYAGE_EMBED_MODEL, VOYAGE_RERANK_MODEL)
 
 logger = logging.getLogger(__name__)
 
-# Reliability knobs (could move to config later).
-LLM_MAX_RETRIES = 3       # SDK retries transient errors with exponential backoff
-LLM_TIMEOUT_S = 60.0      # per-request timeout
+LLM_MAX_RETRIES = 3
+LLM_TIMEOUT_S = 60.0
 
-# Approximate USD per 1M tokens -- verified against current pricing.
 PRICE_PER_MTOK_IN = 3.00
 PRICE_PER_MTOK_OUT = 15.00
 
 
 class RAGPipeline:
-    """Dense retrieve -> cross-encoder rerank -> grounded, cited answer."""
+    """Dense retrieve (Voyage) -> Voyage rerank -> grounded, cited answer (Claude)."""
 
     def __init__(self):
         t0 = time.perf_counter()
-        self.embedder = SentenceTransformer(EMBED_MODEL)
-        self.reranker = CrossEncoder(RERANK_MODEL, max_length=512)
+        self.vo = voyageai.Client()          # reads VOYAGE_API_KEY
         self.collection = chromadb.PersistentClient(path=CHROMA_PATH).get_collection(COLLECTION)
-        # built-in retries + timeout handle transient API failures for us
         self.llm = anthropic.Anthropic(max_retries=LLM_MAX_RETRIES, timeout=LLM_TIMEOUT_S)
         logger.info("pipeline loaded in %.1fs (%d chunks indexed)",
                     time.perf_counter() - t0, self.collection.count())
 
-    # --- retrieval: dense candidates -> rerank (final chosen config) ---
+    # --- retrieval: Voyage query embedding -> Chroma -> Voyage rerank ---
     def retrieve(self, query, k=TOP_K, where=None, timings=None):
         t0 = time.perf_counter()
-        qvec = self.embedder.encode([query], normalize_embeddings=True).tolist()
+        # input_type="query" -- the asymmetric counterpart to "document" at index time
+        qvec = self.vo.embed([query], model=VOYAGE_EMBED_MODEL,
+                             input_type="query").embeddings[0]
         t_embed = time.perf_counter()
 
-        res = self.collection.query(
-            query_embeddings=qvec, n_results=DENSE_CANDIDATES, where=where)
+        res = self.collection.query(query_embeddings=[qvec], n_results=DENSE_CANDIDATES, where=where)
         cand = [
             {"id": cid, "text": doc, "meta": meta}
             for cid, doc, meta in zip(res["ids"][0], res["documents"][0], res["metadatas"][0])
@@ -64,10 +58,11 @@ class RAGPipeline:
 
         out = []
         if cand:
-            scores = self.reranker.predict([(query, c["text"]) for c in cand])
-            ranked = sorted(zip(cand, scores), key=lambda x: x[1], reverse=True)
-            for c, score in ranked[:k]:
-                c["rerank_score"] = float(score)
+            rr = self.vo.rerank(query, [c["text"] for c in cand],
+                                model=VOYAGE_RERANK_MODEL, top_k=k)
+            for item in rr.results:
+                c = cand[item.index]
+                c["rerank_score"] = float(item.relevance_score)
                 out.append(c)
         t_rerank = time.perf_counter()
 
@@ -114,12 +109,9 @@ class RAGPipeline:
     def answer(self, query, k=TOP_K, where=None):
         """Never raises. Returns {answer, sources, chunks, metrics, error}."""
         t0 = time.perf_counter()
-
-        # input validation
         if not query or not query.strip():
             return self._fail("Please provide a question.", "empty_query", t0, {})
 
-        # --- retrieval (local; guard against index/model failures) ---
         timings = {}
         try:
             chunks = self.retrieve(query, k=k, where=where, timings=timings)
@@ -129,17 +121,15 @@ class RAGPipeline:
                 "Sorry, I couldn't search the filings right now. Please try again.",
                 "retrieval_error", t0, timings)
 
-        # graceful refusal when nothing relevant is retrieved (not an error)
         if not chunks:
             timings["generate_ms"] = 0.0
             metrics = self._metrics(timings, {"input_tokens": 0, "output_tokens": 0}, t0, refused=True)
             return self._result(REFUSAL, [], [], metrics, error=None)
 
-        # --- generation (transient errors already retried by the SDK) ---
         t_gen0 = time.perf_counter()
         try:
             text, usage = self._generate(query, chunks)
-        except anthropic.APIStatusError as e:            # 4xx/5xx incl. exhausted 429
+        except anthropic.APIStatusError as e:
             code = getattr(e, "status_code", "?")
             logger.error("LLM status error %s", code)
             return self._fail(
@@ -147,16 +137,14 @@ class RAGPipeline:
                 f"llm_status_{code}", t0, timings)
         except (anthropic.APIConnectionError, anthropic.APITimeoutError):
             logger.error("LLM connection/timeout after retries")
-            return self._fail(
-                "The answer service timed out. Please try again.",
-                "llm_timeout", t0, timings)
+            return self._fail("The answer service timed out. Please try again.",
+                              "llm_timeout", t0, timings)
         except anthropic.APIError:
             logger.exception("LLM error")
-            return self._fail(
-                "The answer service failed. Please try again.", "llm_error", t0, timings)
+            return self._fail("The answer service failed. Please try again.",
+                              "llm_error", t0, timings)
         timings["generate_ms"] = round((time.perf_counter() - t_gen0) * 1000, 1)
 
-        # map cited [n] -> structured sources
         cited = sorted({int(n) for n in re.findall(r"\[(\d+)\]", text)})
         sources = []
         for n in cited:
@@ -192,17 +180,13 @@ class RAGPipeline:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     rag = RAGPipeline()
-    tests = [
-        "What risks does Boeing highlight about the 737 program?",
-        "",   # empty-query guard
-    ]
-    for q in tests:
+    for q in ["What risks does Boeing highlight about the 737 program?",
+              "How does JPMorgan describe the components of its net revenue?"]:
         print("\n" + "=" * 72)
-        print(f"Q: {q!r}")
+        print(f"Q: {q}")
         r = rag.answer(q)
-        print(f"\n{r['answer'][:300]}")
-        print(f"  error={r['error']}")
+        print(f"\n{r['answer'][:300]}\n")
         m = r["metrics"]
-        if m.get("error") is None and not m.get("refused"):
-            print(f"  TOTAL {m['total_ms']}ms | tokens {m['input_tokens']}in/"
-                  f"{m['output_tokens']}out | ${m['est_cost_usd']}")
+        print(f"  embed {m.get('embed_ms')}ms | search {m.get('search_ms')}ms | "
+              f"rerank {m.get('rerank_ms')}ms | generate {m.get('generate_ms')}ms")
+        print(f"  TOTAL {m['total_ms']}ms | ${m['est_cost_usd']}")

@@ -16,8 +16,14 @@ Any value can be overridden by an environment variable (useful for deploys).
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # --- paths (anchored to repo root: src/config.py -> parent.parent) ---
 ROOT = Path(__file__).resolve().parent.parent
+
+# Load VOYAGE_API_KEY / ANTHROPIC_API_KEY etc. from the repo .env for every
+# script. Anchored to ROOT (not the CWD) so it resolves when run from anywhere.
+load_dotenv(ROOT / ".env")
 DATA_DIR = ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
 EVAL_DIR = DATA_DIR / "eval"
@@ -30,6 +36,9 @@ GOLD_PATH = EVAL_DIR / "eval_gold_narrative.jsonl"
 # --- models ---
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "BAAI/bge-m3")
 RERANK_MODEL = os.environ.get("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+# Voyage AI API models (migration target; replaces the local BGE models above).
+VOYAGE_EMBED_MODEL = os.environ.get("VOYAGE_EMBED_MODEL", "voyage-3.5")
+VOYAGE_RERANK_MODEL = os.environ.get("VOYAGE_RERANK_MODEL", "rerank-2.5")
 LLM_MODEL = os.environ.get("LLM_MODEL", "claude-sonnet-5")
 COLLECTION = os.environ.get("CHROMA_COLLECTION", "filings")
 

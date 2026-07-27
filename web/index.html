@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SEC Filings RAG</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root{
+    --paper:#FAFAF7; --ink:#1B1B1A; --muted:#6B6B66; --line:#E6E5DE;
+    --accent:#0B6E4F; --accent-soft:#EAF2EE; --warn:#9A3B2E;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink); font-family:var(--sans);
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:48px 20px 80px}
+  header{border-bottom:1px solid var(--line); padding-bottom:20px; margin-bottom:28px}
+  h1{font-size:20px; letter-spacing:-0.01em; margin:0 0 6px}
+  .thesis{color:var(--muted); font-size:14px; margin:0; max-width:60ch}
+  .corpus{font-family:var(--mono); font-size:11.5px; color:var(--accent);
+    margin-top:12px; letter-spacing:0.02em}
+
+  form{display:flex; flex-direction:column; gap:10px; margin-bottom:14px}
+  .row{display:flex; gap:8px}
+  textarea{
+    flex:1; resize:vertical; min-height:52px; padding:12px 14px; font:inherit;
+    border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink);
+  }
+  textarea:focus{outline:2px solid var(--accent-soft); border-color:var(--accent)}
+  select{
+    font-family:var(--mono); font-size:12px; padding:0 10px; border:1px solid var(--line);
+    border-radius:8px; background:#fff; color:var(--ink);
+  }
+  button{
+    font:inherit; font-weight:600; padding:0 22px; border:none; border-radius:8px;
+    background:var(--accent); color:#fff; cursor:pointer; white-space:nowrap;
+  }
+  button:disabled{opacity:.55; cursor:default}
+
+  .examples{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:30px}
+  .chip{
+    font-size:12px; color:var(--muted); background:#fff; border:1px solid var(--line);
+    border-radius:999px; padding:5px 11px; cursor:pointer;
+  }
+  .chip:hover{border-color:var(--accent); color:var(--accent)}
+
+  #status{font-family:var(--mono); font-size:12.5px; color:var(--muted); min-height:18px}
+  .dots::after{content:"…"; animation:blink 1.4s steps(4,end) infinite; width:1.4ch;
+    display:inline-block; text-align:left}
+  @keyframes blink{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"…"}}
+  @media (prefers-reduced-motion:reduce){.dots::after{animation:none;content:"…"}}
+
+  .answer{font-size:15.5px; margin:18px 0 6px}
+  .answer h2,.answer h3{font-size:15px; margin:18px 0 6px}
+  .answer p{margin:0 0 12px}
+  .answer ul{margin:0 0 12px; padding-left:20px}
+  .answer strong{font-weight:650}
+  .answer.refused,.answer.err{color:var(--muted); font-style:italic}
+  .answer.err{color:var(--warn)}
+
+  .cites{display:flex; flex-wrap:wrap; gap:6px; margin:14px 0}
+  .cite{font-family:var(--mono); font-size:11.5px; background:var(--accent-soft);
+    color:var(--accent); border-radius:5px; padding:3px 8px}
+
+  details{border-top:1px solid var(--line); margin-top:22px; padding-top:14px}
+  summary{font-family:var(--mono); font-size:12px; color:var(--muted); cursor:pointer}
+  .passage{border-left:2px solid var(--line); padding:8px 0 8px 12px; margin:12px 0}
+  .passage .ref{font-family:var(--mono); font-size:11px; color:var(--accent)}
+  .passage .snip{font-size:13px; color:#403f3a; margin-top:3px}
+  .score{color:var(--muted)}
+
+  .readout{font-family:var(--mono); font-size:12px; color:var(--muted);
+    border-top:1px solid var(--line); margin-top:24px; padding-top:12px;
+    display:flex; gap:18px; flex-wrap:wrap}
+  .readout b{color:var(--ink); font-weight:600}
+  footer{margin-top:40px; font-size:12px; color:var(--muted)}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>SEC Filings RAG</h1>
+    <p class="thesis">Ask a question about six companies' 10-K annual reports. Every
+      answer is drawn only from retrieved passages and cited back to the exact filing
+      section — or the system says it doesn't know.</p>
+    <div class="corpus">MSFT · JPM · ADBE · AWK · BA · PFE — Items 1, 1A, 7</div>
+  </header>
+
+  <form id="f">
+    <textarea id="q" placeholder="Ask about risks, strategy, or business segments…"></textarea>
+    <div class="row">
+      <select id="co">
+        <option value="">All companies</option>
+        <option value="MSFT">Microsoft</option>
+        <option value="JPM">JPMorgan</option>
+        <option value="ADBE">Adobe</option>
+        <option value="AWK">American Water Works</option>
+        <option value="BA">Boeing</option>
+        <option value="PFE">Pfizer</option>
+      </select>
+      <button id="go" type="submit">Ask</button>
+    </div>
+  </form>
+
+  <div class="examples" id="ex"></div>
+
+  <div id="status"></div>
+  <div id="out"></div>
+
+  <footer>Retrieval: BGE-M3 dense + cross-encoder rerank over 982 chunks. Generation:
+    Claude, grounded in retrieved context.</footer>
+</div>
+
+<script>
+const EXAMPLES = [
+  "What risks does Boeing highlight about the 737 program?",
+  "How does JPMorgan describe the components of its net revenue?",
+  "How does Adobe describe its subscription business model?",
+  "What regulatory risks does American Water Works face?",
+];
+
+const $ = s => document.querySelector(s);
+const exBox = $("#ex");
+EXAMPLES.forEach(t => {
+  const c = document.createElement("button");
+  c.type = "button"; c.className = "chip"; c.textContent = t;
+  c.onclick = () => { $("#q").value = t; ask(); };
+  exBox.appendChild(c);
+});
+
+$("#f").addEventListener("submit", e => { e.preventDefault(); ask(); });
+$("#q").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); ask(); }
+});
+
+async function ask(){
+  const question = $("#q").value.trim();
+  if (!question) return;
+  const ticker = $("#co").value || null;
+
+  $("#go").disabled = true;
+  $("#out").innerHTML = "";
+  $("#status").innerHTML = '<span class="dots">Searching filings and drafting an answer</span>';
+
+  const t0 = performance.now();
+  try {
+    const res = await fetch("/query", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question, ticker}),
+    });
+    const data = await res.json();
+    render(data, (performance.now() - t0) / 1000);
+  } catch (err) {
+    $("#status").textContent = "";
+    $("#out").innerHTML = '<div class="answer err">The request failed to reach the server. Please try again.</div>';
+  } finally {
+    $("#go").disabled = false;
+  }
+}
+
+function render(data, wallSecs){
+  $("#status").textContent = "";
+  const out = $("#out");
+  const m = data.metrics || {};
+  let html = "";
+
+  const cls = data.error ? "answer err" : (m.refused ? "answer refused" : "answer");
+  const answerHtml = data.error || m.refused
+    ? escapeHtml(data.answer)
+    : (window.marked ? marked.parse(data.answer) : escapeHtml(data.answer));
+  html += `<div class="${cls}">${answerHtml}</div>`;
+
+  if (data.sources && data.sources.length){
+    html += '<div class="cites">' + data.sources.map(s =>
+      `<span class="cite">${s.ticker} · FY${s.fiscal_year} · ${s.section}</span>`
+    ).join("") + '</div>';
+  }
+
+  if (data.retrieved && data.retrieved.length){
+    html += `<details><summary>Retrieved passages (${data.retrieved.length})</summary>`;
+    html += data.retrieved.map(p =>
+      `<div class="passage"><div class="ref">${p.ticker} · FY${p.fiscal_year} · ${p.section}
+        <span class="score">· score ${p.rerank_score}</span></div>
+       <div class="snip">${escapeHtml(p.snippet)}…</div></div>`
+    ).join("");
+    html += `</details>`;
+  }
+
+  // metrics readout — the instrumentation, surfaced
+  if (m.total_ms != null){
+    html += `<div class="readout">
+      <span>latency <b>${(m.total_ms/1000).toFixed(1)}s</b></span>
+      <span>retrieval <b>${(m.retrieval_ms/1000).toFixed(1)}s</b></span>
+      <span>generation <b>${((m.generate_ms||0)/1000).toFixed(1)}s</b></span>
+      <span>tokens <b>${(m.input_tokens||0)}→${(m.output_tokens||0)}</b></span>
+      <span>est. cost <b>$${(m.est_cost_usd||0).toFixed(4)}</b></span>
+    </div>`;
+  }
+  out.innerHTML = html;
+}
+
+function escapeHtml(s){
+  return (s||"").replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+</script>
+</body>
+</html>

@@ -1,83 +1,58 @@
 """
-Phase 3 embedding + indexing: embed each chunk with a local open-source model
-and load them into a persistent Chroma vector store. Ends with test queries so
-you can see real retrieval working.
+Re-embed the corpus with the Voyage AI embedding API (replaces local BGE-M3) and
+rebuild the Chroma index. Part of the API-retrieval migration that makes the
+service deployable on tiny free hosts (no local ML models, no torch).
 
-Model: BAAI/bge-m3 (MIT-licensed, strong open retrieval model; its family pairs
-cleanly with a BGE reranker in Phase 6). First run downloads ~2GB of weights.
-If your machine is constrained or you want the fastest setup, swap MODEL_NAME to
-"sentence-transformers/all-MiniLM-L6-v2" (~90MB, lower quality but instant).
-Note: BGE-M3 needs NO special query prefix, so we embed queries and documents
-the same way. (Some other BGE models require a query instruction; M3 does not.)
+Free tier: 200M tokens -- re-embedding 982 chunks (~0.8M tokens) is essentially free.
 
-Requires: pip install sentence-transformers chromadb
+Setup: export VOYAGE_API_KEY=...
+       pip install voyageai chromadb
+Run:   PYTHONPATH=src python src/embed_index.py
 """
 
 import json
+import time
+from pathlib import Path
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+import voyageai
 
-from config import CHUNKS_PATH, CHROMA_PATH, COLLECTION, EMBED_MODEL
+from config import CHROMA_PATH, CHUNKS_PATH, COLLECTION, VOYAGE_EMBED_MODEL
 
-BATCH = 32
+BATCH = 100   # chunks per embed call (stays under Voyage per-call token limits)
 
-# --- 1. Load chunks ---
-chunks = [json.loads(line) for line in CHUNKS_PATH.open(encoding="utf-8")]
-print(f"Loaded {len(chunks)} chunks")
+vo = voyageai.Client()   # reads VOYAGE_API_KEY
+
+chunks = [json.loads(line) for line in Path(CHUNKS_PATH).open(encoding="utf-8")]
+print(f"Loaded {len(chunks)} chunks; embedding with {VOYAGE_EMBED_MODEL}...")
 
 texts = [c["text"] for c in chunks]
 ids = [c["chunk_id"] for c in chunks]
-# Chroma metadata must be scalar (str/int/float/bool) -- drop 'text', keep the rest
 metadatas = [{
-    "ticker": c["ticker"],
-    "company": c["company"],
-    "fiscal_year": c["fiscal_year"],
-    "section": c["section"],
-    "chunk_index": c["chunk_index"],
-    "n_tokens": c["n_tokens"],
+    "ticker": c["ticker"], "company": c["company"], "fiscal_year": c["fiscal_year"],
+    "section": c["section"], "chunk_index": c["chunk_index"], "n_tokens": c["n_tokens"],
 } for c in chunks]
 
-# --- 2. Embed (normalized -> cosine similarity) ---
-print(f"Loading model {EMBED_MODEL} (first run downloads weights)...")
-model = SentenceTransformer(EMBED_MODEL)
-print("Embedding chunks...")
-embeddings = model.encode(
-    texts, batch_size=BATCH, normalize_embeddings=True, show_progress_bar=True
-).tolist()
+# --- embed in batches; input_type="document" optimizes the CORPUS side ---
+embeddings, total_tokens = [], 0
+for i in range(0, len(texts), BATCH):
+    batch = texts[i:i + BATCH]
+    r = vo.embed(batch, model=VOYAGE_EMBED_MODEL, input_type="document")
+    embeddings.extend(r.embeddings)
+    total_tokens += r.total_tokens
+    print(f"  embedded {i + len(batch)}/{len(texts)}  (tokens: {total_tokens})")
+    time.sleep(0.2)   # gentle on rate limits
 
-# --- 3. Load into a fresh Chroma collection (cosine space) ---
+# --- rebuild the Chroma collection with the new vectors ---
 client = chromadb.PersistentClient(path=CHROMA_PATH)
 try:
-    client.delete_collection(COLLECTION)   # rebuild cleanly on re-run
+    client.delete_collection(COLLECTION)
 except Exception:
     pass
-collection = client.create_collection(name=COLLECTION, metadata={"hnsw:space": "cosine"})
-collection.add(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
-print(f"Indexed {collection.count()} chunks -> {CHROMA_PATH} (collection '{COLLECTION}')")
+col = client.create_collection(name=COLLECTION, metadata={"hnsw:space": "cosine"})
+col.add(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
 
-
-# --- 4. Test queries: prove retrieval works ---
-def search(query, k=5, where=None):
-    """Embed the query with the SAME model, then retrieve top-k from Chroma."""
-    qvec = model.encode([query], normalize_embeddings=True).tolist()
-    return collection.query(query_embeddings=qvec, n_results=k, where=where)
-
-
-def show(query, res):
-    print(f"\nQuery: {query}")
-    for rank, (doc, meta, dist) in enumerate(zip(
-            res["documents"][0], res["metadatas"][0], res["distances"][0]), 1):
-        snippet = doc[:160].replace("\n", " ")
-        print(f"  {rank}. [{meta['ticker']} FY{meta['fiscal_year']} {meta['section']}]"
-              f" dist={dist:.3f}")
-        print(f"     {snippet}...")
-
-
-# a) general query across the whole corpus
-q1 = "What are the main risk factors the company faces?"
-show(q1, search(q1, k=5))
-
-# b) filtered query -- retrieval scoped to one company via metadata
-q2 = "impact of the 737 MAX grounding on operations"
-show(q2, search(q2, k=5, where={"ticker": "BA"}))
+print(f"\nIndexed {col.count()} chunks with {VOYAGE_EMBED_MODEL} "
+      f"(dim={len(embeddings[0])}). Embedding tokens used: {total_tokens}")
+print("Note: this overwrote the BGE-M3 index. Compare the new eval numbers against "
+      "the saved BGE numbers in FINDINGS (same gold set + metric code = valid comparison).")

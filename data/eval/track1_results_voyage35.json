@@ -3,20 +3,20 @@
     "id": "n01",
     "ticker": "BA",
     "first_hit_rank": 1,
-    "refused": false,
-    "faithfulness": 1.0
-  },
-  {
-    "id": "n02",
-    "ticker": "BA",
-    "first_hit_rank": 2,
     "refused": true,
     "faithfulness": null
   },
   {
+    "id": "n02",
+    "ticker": "BA",
+    "first_hit_rank": 1,
+    "refused": false,
+    "faithfulness": 1.0
+  },
+  {
     "id": "n03",
     "ticker": "BA",
-    "first_hit_rank": 2,
+    "first_hit_rank": 4,
     "refused": false,
     "faithfulness": 1.0
   },
@@ -25,7 +25,7 @@
     "ticker": "MSFT",
     "first_hit_rank": 1,
     "refused": false,
-    "faithfulness": 1.0
+    "faithfulness": 0.9565217391304348
   },
   {
     "id": "n05",
@@ -39,7 +39,7 @@
     "ticker": "MSFT",
     "first_hit_rank": 1,
     "refused": false,
-    "faithfulness": 1.0
+    "faithfulness": 0.9259259259259259
   },
   {
     "id": "n07",
@@ -52,8 +52,8 @@
     "id": "n08",
     "ticker": "JPM",
     "first_hit_rank": 1,
-    "refused": false,
-    "faithfulness": 1.0
+    "refused": true,
+    "faithfulness": null
   },
   {
     "id": "n09",
@@ -67,21 +67,21 @@
     "ticker": "AWK",
     "first_hit_rank": 1,
     "refused": false,
-    "faithfulness": 0.9166666666666666
+    "faithfulness": 1.0
   },
   {
     "id": "n11",
     "ticker": "AWK",
     "first_hit_rank": 1,
     "refused": false,
-    "faithfulness": 0.9230769230769231
+    "faithfulness": 1.0
   },
   {
     "id": "n12",
     "ticker": "AWK",
-    "first_hit_rank": 4,
+    "first_hit_rank": 3,
     "refused": false,
-    "faithfulness": 0.9523809523809523
+    "faithfulness": 1.0
   },
   {
     "id": "n13",
@@ -151,6 +151,6 @@
     "ticker": "AWK",
     "first_hit_rank": 1,
     "refused": false,
-    "faithfulness": 0.9375
+    "faithfulness": 1.0
   }
 ]
