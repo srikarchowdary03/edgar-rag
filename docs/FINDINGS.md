@@ -132,6 +132,60 @@ claim is "dense+rerank wins *here*," not universally.
 
 ---
 
+---
+
+## API-retrieval migration (local models -> Voyage AI)
+
+The original stack ran two local models (BGE-M3 embedder + BGE cross-encoder
+reranker). That made the service heavy to host (~4GB RAM, ~5GB image) and slow
+(~35s/query, reranking dominated on CPU). Both retrieval stages were migrated to
+the Voyage AI API (embeddings + rerank), keeping Chroma as the local vector store
+and Claude for generation.
+
+### Result: equivalent ranking quality, ~5x faster, free to host
+
+| Metric        | BGE-M3 (local) | voyage-3.5 (API, chosen) |
+|---------------|:--------------:|:------------------------:|
+| hit@1         | 0.818          | 0.773                    |
+| hit@3         | 0.909          | 0.955                    |
+| hit@5         | 0.955          | 1.000                    |
+| MRR           | 0.867          | 0.867                    |
+| faithfulness  | 0.989          | 0.982                    |
+| query latency | ~35s           | ~7s                      |
+| server RAM    | ~4GB (models)  | ~300MB (no local models) |
+
+**Trade read honestly:** voyage-3.5 gave up a little top-1 precision (hit@1
+0.818 -> 0.773) but improved recall (perfect hit@5 = 1.000) and matched ranking
+quality exactly (MRR 0.867). Retrieval latency collapsed from ~35s to <0.5s
+(embed ~150ms + search ~10ms + rerank ~230ms); generation now dominates. Dropping
+torch/sentence-transformers shrank the server enough to deploy on a free host.
+Net: essentially equal quality, 5x faster, and free to run.
+
+### A/B: general vs finance-domain embedding model
+
+Hypothesis: a finance-domain embedding model would retrieve better on 10-K text.
+Tested via the eval harness (single-variable swap, rerank held constant):
+
+| Metric  | voyage-3.5 | voyage-finance-2 |
+|---------|:----------:|:----------------:|
+| hit@1   | 0.773      | 0.727            |
+| hit@3   | 0.955      | 0.955            |
+| hit@5   | 1.000      | 1.000            |
+| MRR     | 0.867      | 0.852            |
+
+**Hypothesis rejected on the data.** The finance-domain model was *worse* on
+hit@1 and MRR. Likely because voyage-finance-2 is an older model generation than
+the general voyage-3.5, and the questions are conceptual narrative Q&A rather than
+dense-jargon lookups. Kept the general model. (Illustrates choosing on measurement
+rather than the intuitive domain-specific default.)
+
+### Final production stack
+
+- Embeddings: Voyage `voyage-3.5` (input_type document/query), Chroma cosine index.
+- Rerank: Voyage `rerank-2.5` over dense top-10.
+- Generation: Claude, grounded + cited.
+- No local ML models on the server -> free-tier deployable, ~7s/query.
+
 ## Known limitations / open items
 
 - **n10 / n12** (AWK questions) — retriever prefers the business section over risk
